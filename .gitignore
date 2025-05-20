@@ -24,3 +24,6 @@ pnpm-debug.log*
 # ⚙️ Mac & Windows artefacts
 .DS_Store
 Thumbs.db
+
+# repl
+.repl_history
