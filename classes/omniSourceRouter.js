@@ -1,5 +1,5 @@
-const dgram = require('dgram');
-const UDPRouter = require('./udpRouter');
+import UDPRouter from './udpRouter.js';
+
 
 class OmniSourceRouter {
   constructor(fastify) {
@@ -8,4 +8,4 @@ class OmniSourceRouter {
   }
 }
 
-module.exports = OmniSourceRouter;
+export default OmniSourceRouter;

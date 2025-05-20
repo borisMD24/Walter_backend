@@ -1,26 +1,11 @@
-const OmniSourceRouter = require('./classes/omniSourceRouter');
-const fastify = require('fastify')();
- 
-const router = new OmniSourceRouter(fastify);
-  fastify.register(require('@fastify/postgres'), {
-    connectionString: 'postgres://postgres:2429@localhost:5432/mydb'
-  });
+import OmniSourceRouter from './classes/omniSourceRouter.js';
+import fastify from 'fastify';
+import routes from './routes.js';
 
+const app = fastify();
+const router = new OmniSourceRouter(app);
 
-  router.fastify.get('/users', async (request, reply) => {
-    const client = await fastify.pg.connect();
-    try {
-      const { rows } = await client.query('SELECT * FROM users');
-      return rows;
-    } finally {
-      client.release();
-    }
-  });  
-  router.fastify.get('/test', async (request, reply) => {
-    reply.code(200)
-    .header('Content-Type', 'application/json; charset=utf-8')
-    .send({ hello: 'world' })
-  });
+routes(router);
 
   router.fastify.listen({ port: 3000 }, err => {
     if (err) throw err;

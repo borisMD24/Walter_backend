@@ -1,4 +1,4 @@
-const dgram = require('dgram');
+import dgram from 'dgram';
 
 class UDPRouter {
   constructor() {
@@ -14,4 +14,4 @@ class UDPRouter {
   }
 }
 
-module.exports = UDPRouter;
+export default UDPRouter;

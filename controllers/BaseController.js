@@ -9,10 +9,16 @@ class BaseController {
     this.reply = reply;
   }
 
-  /**
-   * Réponse HTTP 200 OK avec payload JSON
-   * @param {any} body
-   */
+  get() { this.defaultResponse(); }
+  post() { this.defaultResponse(); }
+  put() { this.defaultResponse(); }
+  patch() { this.defaultResponse(); }
+  delete() { this.defaultResponse(); }
+
+  defaultResponse() {
+    this.error(501, `The route '${this.request.method} ${this.request.url}' has not been implemented yet.`);
+  }
+
   success(body) {
     return this.reply
       .code(200)
@@ -20,10 +26,6 @@ class BaseController {
       .send(body);
   }
 
-  /**
-   * Réponse HTTP 201 Created
-   * @param {any} body
-   */
   created(body) {
     return this.reply
       .code(201)
@@ -31,18 +33,10 @@ class BaseController {
       .send(body);
   }
 
-  /**
-   * Réponse HTTP 204 No Content
-   */
   noContent() {
     return this.reply.code(204).send();
   }
 
-  /**
-   * Réponse d'erreur générique
-   * @param {number} statusCode
-   * @param {string|object} message
-   */
   error(statusCode = 500, message = 'Internal Server Error') {
     return this.reply
       .code(statusCode)
@@ -50,17 +44,12 @@ class BaseController {
       .send({ error: message });
   }
 
-  /**
-   * Validation simplifiée
-   * @param {Function} validator - Fonction qui lance une erreur si invalide
-   */
   validate(validator) {
     try {
       validator(this.request);
     } catch (err) {
-      return this.error(400, err.message);
+      this.error(400, err.message);
     }
   }
 }
-
-module.exports = BaseController;
+export default BaseController;
