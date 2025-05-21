@@ -4,5 +4,7 @@ import TestController from "./controllers/testController.js";
 export default function routes(router){
     new HTTPRouteAbstraction(router, TestController)
             .setUri("test")
+            .addSlugs(["nbr", "yes"])
+            .optional(["get"])
             .ressources();
 }
