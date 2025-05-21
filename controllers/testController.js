@@ -4,7 +4,7 @@ class TestController extends BaseController{
         console.log(this.request.params);
         
         this.success({
-            yes : "it works updated"
+            yes : Config.data.jk.tt
         });
     }
 }

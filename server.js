@@ -1,10 +1,11 @@
 import OmniSourceRouter from './classes/omniSourceRouter.js';
 import fastify from 'fastify';
 import routes from './routes.js';
+import Config from './classes/dynamicConfig.js';
 
+await Config.load();
 const app = fastify();
 const router = new OmniSourceRouter(app);
-
 routes(router);
 
 router.fastify.listen(

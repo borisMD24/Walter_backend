@@ -27,3 +27,6 @@ Thumbs.db
 
 # repl
 .repl_history
+
+# dynamic config
+.dynamiconfig.json
