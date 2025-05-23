@@ -30,3 +30,5 @@ Thumbs.db
 
 # dynamic config
 .dynamiconfig.json
+
+schema/
