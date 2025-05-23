@@ -5,7 +5,8 @@
     "drizzle-orm": "^0.43.1",
     "fastify": "^5.3.3",
     "nodemon": "^3.1.10",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "ws": "^8.18.2"
   },
   "name": "walterbackend",
   "version": "1.0.0",
