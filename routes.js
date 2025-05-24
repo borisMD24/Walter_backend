@@ -1,5 +1,6 @@
 import HTTPRouteAbstraction from "./classes/HTTPRouteAbstraction.js";
 import TestController from "./controllers/testController.js";
+import HueController from "./controllers/HueController.js";
 
 
 const http = (router) => {
@@ -8,6 +9,10 @@ const http = (router) => {
             .addSlugs(["nbr", "yes"])
             .optional(["get"])
             .ressources();
+    new HTTPRouteAbstraction(router, HueController)
+        .setUri("hue")
+        .addSlugs(["id"])
+        .ressources();
 }
 
 const wsRoute = (ws) => {
