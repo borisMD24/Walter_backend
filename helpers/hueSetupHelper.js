@@ -1,134 +1,211 @@
 import Config from "../classes/dynamicConfig.js";
 import axios from "axios";
 import HueModel from "../models/hueModel.js";
-class HueSetupHelper{
-      static async getDevices() {
-  const myHeaders = new Headers();
-  myHeaders.append("hue-application-key", Config.data.hue.username);
-  myHeaders.append("Content-Type", "application/json");
 
-  const requestOptions = {
-    method: "GET",
-    headers: myHeaders,
-    redirect: "follow",
-  };
-  
-  try {
-    const response = await fetch(
-      "https://"+Config.data.hue.ip+"/clip/v2/resource/device",
-      requestOptions
-    );
+class HueSetupHelper {
+  static async getDevices() {
+    const headers = {
+      "hue-application-key": Config.data.hue.username,
+      "Content-Type": "application/json",
+    };
 
-    const json = await response.json();
-    
-    // Filter out the bridge, keep only bulbs/lights
-    const bulbs = json.data.filter(device => 
-      device.product_data.product_archetype !== 'bridge_v2'
-    );
-    await bulbs.map(async (bulb)=>{
-      console.log(bulb.services.filter(s => s.rtype == "light"));
-      const hueId = bulb.services.filter(s => s.rtype == "light")[0]["rid"];
-      console.log(hueId);
-      console.log(bulb.metadata.name);
-      
-      const checkHue = await HueModel.where(
-        {
-          hueId : hueId
-        }
-      )
-      console.log(checkHue);
-      
-      if(checkHue == 0){
-        await HueModel.create({
-          hueId,
-          name: bulb.metadata.name,
-          up: true,
-          model: "bulb"
-        }).catch((e)=> console.log(e))
+    const requestOptions = {
+      method: "GET",
+      headers,
+      redirect: "follow",
+    };
+
+    try {
+      const response = await fetch(
+        `https://${Config.data.hue.ip}/clip/v2/resource/device`,
+        requestOptions
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    })
-    
-  } catch (error) {
-    console.error("🔥 Erreur fetch Hue token:", error);
-  }
-}
-  static async getHueToken() {
 
-    // On récupère la config dans l'objet chargé
+      const json = await response.json();
+
+      // Filter out the bridge, keep only bulbs/lights
+      const bulbs = json.data.filter(
+        (device) => device.product_data.product_archetype !== "bridge_v2"
+      );
+
+      // Use Promise.all instead of map with async
+      const bulbPromises = bulbs.map(async (bulb) => {
+        const lightServices = bulb.services.filter((s) => s.rtype === "light");
+        
+        if (lightServices.length === 0) {
+          console.warn(`No light service found for bulb: ${bulb.metadata.name}`);
+          return;
+        }
+
+        const hueId = lightServices[0].rid;
+        console.log(`Processing bulb - ID: ${hueId}, Name: ${bulb.metadata.name}`);
+
+        try {
+          const existingHue = await HueModel.where({ hueId });
+
+          // Check if no existing records found (empty array or length 0)
+          if (!existingHue || existingHue.length === 0) {
+            await HueModel.create({
+              hueId,
+              name: bulb.metadata.name,
+              up: true,
+              model: "bulb",
+            });
+            console.log(`Created new Hue device: ${bulb.metadata.name}`);
+          } else {
+            console.log(`Hue device already exists: ${bulb.metadata.name}`);
+          }
+        } catch (error) {
+          console.error(`Error processing bulb ${bulb.metadata.name}:`, error);
+        }
+      });
+
+      await Promise.all(bulbPromises);
+      console.log("Device synchronization completed");
+      
+    } catch (error) {
+      console.error("🔥 Error fetching Hue devices:", error);
+      throw error;
+    }
+  }
+
+  static async getHueToken() {
     const ip = Config.data.hue?.ip;
     if (!ip) {
       return {
-        error: "hueIp is'nt set",
+        error: "Hue IP is not set",
       };
     }
 
-    const raw = JSON.stringify({
+    const requestBody = {
       devicetype: "walter#walter",
       generateclientkey: true,
-    });
+    };
 
     const requestOptions = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: raw,
+      body: JSON.stringify(requestBody),
       redirect: "follow",
     };
 
     try {
-      const response = await fetch(`http://${ip}/api`, requestOptions);
+      const response = await fetch(`https://${ip}/api`, requestOptions);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const json = await response.json();
-      if (json[0].error) {
-        if (json[0].error.description == "link button not pressed") {
+
+      // Handle error response
+      if (json[0]?.error) {
+        const errorDescription = json[0].error.description;
+        if (errorDescription === "link button not pressed") {
           return {
-            error: "the button is'nt pressed",
+            error: "The link button on the bridge is not pressed",
           };
         }
+        return {
+          error: errorDescription,
+        };
       }
-      if (json[0].success) {
-        if (json[0].success.username && json[0].success.clientkey) {
-          await Config.write("hue.username", json[0].success.username);
-          await Config.write("hue.clientkey", json[0].success.clientkey);
-          return true;
+
+      // Handle success response
+      if (json[0]?.success) {
+        const { username, clientkey } = json[0].success;
+        if (username && clientkey) {
+          await Config.write("hue.username", username);
+          await Config.write("hue.clientkey", clientkey);
+          return { success: true };
         }
       }
-    } catch (error) {
+
       return {
-        error
+        error: "Unexpected response format from Hue bridge",
+      };
+      
+    } catch (error) {
+      console.error("Error getting Hue token:", error);
+      return {
+        error: error.message || "Failed to get Hue token",
       };
     }
   }
+
   static async findBridge() {
     const foundIps = [];
     const promises = [];
+    const baseIp = "192.168.1.";
 
     for (let i = 1; i < 255; i++) {
-      const ip = "192.168.1." + i;
-      promises.push(
-        axios
-          .get(`http://${ip}`, { timeout: 1000})
-          .then((res) => {
-            if (res.data.includes("hue personal wireless lighting")) foundIps.push(ip);
-          })
-          .catch(() => {
-          })
-      );
+      const ip = baseIp + i;
+      const promise = axios
+        .get(`http://${ip}`, { 
+          timeout: 1000,
+          validateStatus: () => true // Accept any status code
+        })
+        .then((response) => {
+          if (response.data && 
+              typeof response.data === 'string' && 
+              response.data.includes("hue personal wireless lighting")) {
+            foundIps.push(ip);
+          }
+        })
+        .catch(() => {
+          // Silently ignore network errors (expected for most IPs)
+        });
+
+      promises.push(promise);
     }
 
     await Promise.all(promises);
     return foundIps;
   }
-  static async setup(){
-    const ips = await this.findBridge();
-    if(ips.length == 0){
-      return {error : "bridge not found"}
-    }
-    await Config.write("hue.ip", ips[0]);
-    const hueTokenFetched = this.getHueToken();
-    if(hueTokenFetched != true){
-      return hueTokenFetched;
+
+  static async setup() {
+    try {
+      console.log("Starting Hue bridge setup...");
+      
+      // Find bridge
+      const ips = await this.findBridge();
+      if (ips.length === 0) {
+        return { 
+          error: "Hue bridge not found on network" 
+        };
+      }
+
+      console.log(`Found Hue bridge at: ${ips[0]}`);
+      await Config.write("hue.ip", ips[0]);
+
+      // Get token
+      const tokenResult = await this.getHueToken();
+      if (!tokenResult.success) {
+        return tokenResult;
+      }
+
+      console.log("Hue token obtained successfully");
+
+      // Get devices
+      await this.getDevices();
+
+      return {
+        success: "Hue bridge has been setup successfully",
+      };
+      
+    } catch (error) {
+      console.error("Error during Hue setup:", error);
+      return {
+        error: "Setup failed: " + error.message,
+      };
     }
   }
 }
+
 export default HueSetupHelper;
