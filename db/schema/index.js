@@ -32,4 +32,3 @@ export const hues = pgTable("hues", {
   }).default("xy"),
   model: text("model"),
 });
-
