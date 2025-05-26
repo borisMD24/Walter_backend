@@ -1,25 +1,44 @@
-import OmniSourceRouter from './classes/omniSourceRouter.js';
 import fastify from 'fastify';
+import fastifyStatic from '@fastify/static';
+import fastifyMultipart from '@fastify/multipart';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+import OmniSourceRouter from './classes/omniSourceRouter.js';
 import routes from './routes.js';
 import Config from './classes/dynamicConfig.js';
 import ws from './classes/webSocketManager.js';
 
-await Config.load();
-const app = fastify();
-const router = new OmniSourceRouter(app);
-routes(router, ws);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+async function startServer() {
+  try {
+    await Config.load();
 
+    const app = fastify();
 
-app.ready(err => {
-  if (err) throw err;
-  ws.initialize(app.server);
+    app.register(fastifyStatic, {
+      root: path.join(__dirname, 'public'),
+      prefix: '/public/',
+      decorateReply: false
+    });
+    app.register(fastifyMultipart);
+    const router = new OmniSourceRouter(app);
+    routes(router, ws);
 
-  router.fastify.listen(
-    { port: 3000, host: '0.0.0.0' },
-    err => {
-      if (err) throw err;
-      console.log('Server listening on http://walter.local:3000');
-    }
-  );
-});
+    await app.ready();
+
+    ws.initialize(app.server);
+
+    await app.listen({ port: 3000, host: '0.0.0.0' });
+
+    console.log('✨ Server listening on http://walter.local:3000 ✨');
+    console.log('🗂️  Static assets served from /public/');
+  } catch (err) {
+    console.error('💥 Failed to start the server:', err);
+    process.exit(1);
+  }
+}
+
+startServer();
