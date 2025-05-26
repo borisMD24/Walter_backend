@@ -1,6 +1,6 @@
 import BaseController from "./BaseController.js";
 class HueController extends BaseController{
-    get(){
+    _get(){
         console.log(this.request.params);
         
         this.success({

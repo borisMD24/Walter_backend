@@ -1,7 +1,7 @@
 import HTTPRouteAbstraction from "./classes/HTTPRouteAbstraction.js";
 import TestController from "./controllers/testController.js";
 import HueController from "./controllers/HueController.js";
-
+import BlobManager from "./classes/blobManager.js";
 
 const http = (router) => {
     new HTTPRouteAbstraction(router, TestController)
@@ -13,6 +13,11 @@ const http = (router) => {
         .setUri("hue")
         .addSlugs(["id"])
         .ressources();
+    router.fastify.post('/upload', async function (req, reply) {
+        const data = await req.file();
+        const url = await BlobManager.create(data.file, data.filename, "imgs")
+        reply.send({ success: true, url });
+    });
 }
 
 const wsRoute = (ws) => {
