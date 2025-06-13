@@ -103,6 +103,7 @@ class WebSocketManager {
         break;
       case 'message':
         this.sendRoomMessage(socket, data.room, data.data);
+        
         break;
       default:
         socket.send(JSON.stringify({ error: '❌ Unknown action.' }));
@@ -212,6 +213,24 @@ class WebSocketManager {
       socket.send(JSON.stringify(message));
     }
   }
+  sendFromRoom(roomName, message) {
+  if (!this.rooms.has(roomName)) {
+    console.error(`❌ Room "${roomName}" does not exist.`);
+    return;
+  }
+  const room = this.rooms.get(roomName);
+  const jsonMessage = JSON.stringify({
+    room: roomName,
+    message
+  });
+
+  for (const client of room) {
+    if (client.readyState === client.OPEN) {
+      client.send(jsonMessage);
+    }
+  }
+}
+
 }
 
 const instance = new WebSocketManager();
