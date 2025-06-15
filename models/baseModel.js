@@ -1,175 +1,217 @@
-import { db, schema } from '../db/index.js';
-import { eq, and, inArray } from 'drizzle-orm';
+import { Model } from 'objection';
+import knexInstance from '../db/knex.js';
 
-class BaseModel {
-  constructor(data = {}) {
-    Object.assign(this, data);
-    this.tableName = this.constructor.name.replace("Model", "").toLowerCase() + "s";
-    
-    // Validate that schema exists for this table
-    if (!schema[this.tableName]) {
-      throw new Error(`Schema not found for table: ${this.tableName}`);
-    }
-    
-    this.schema = schema[this.tableName];
+// CRITICAL: Bind the Model class to the knex instance
+Model.knex(knexInstance);
+
+class BaseModel extends Model {
+  /**
+   * Convert camelCase to snake_case
+   */
+  static camelToSnake(str) {
+    return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
   }
 
   /**
-   * Save the current instance (create if new, update if exists)
-   * @returns {Promise<BaseModel>} The saved instance
+   * Convert snake_case to camelCase
    */
-  async save() {
-    try {
-      if (this.id) {
-        // Update existing record
-        const updatedInstance = await this.constructor.update(this.id, this);
-        if (updatedInstance) {
-          Object.assign(this, updatedInstance);
+  static snakeToCamel(str) {
+    return str.replace(/_([a-z])/g, (match, letter) => letter.toUpperCase());
+  }
+
+  /**
+   * Configure Objection to convert between camelCase and snake_case
+   */
+  static get columnNameMappers() {
+    return {
+      // Convert camelCase properties to snake_case columns
+      format(obj) {
+        const formatted = {};
+        for (const [key, value] of Object.entries(obj)) {
+          formatted[BaseModel.camelToSnake(key)] = value;
         }
-        return this;
-      } else {
-        // Create new record
-        const createdInstance = await this.constructor.create(this);
-        if (createdInstance) {
-          Object.assign(this, createdInstance);
+        return formatted;
+      },
+      // Convert snake_case columns to camelCase properties
+      parse(obj) {
+        const parsed = {};
+        for (const [key, value] of Object.entries(obj)) {
+          parsed[BaseModel.snakeToCamel(key)] = value;
         }
-        return this;
+        return parsed;
       }
-    } catch (error) {
-      throw new Error(`Failed to save ${this.constructor.name}: ${error.message}`);
-    }
-  }
-
-  /**
-   * Delete the current instance
-   * @returns {Promise<boolean>} True if successfully deleted
-   */
-  async delete() {
-    if (!this.id) {
-      throw new Error("Cannot delete instance without an id");
-    }
-    
-    try {
-      const deleted = await this.constructor.delete(this.id);
-      return deleted;
-    } catch (error) {
-      throw new Error(`Failed to delete ${this.constructor.name}: ${error.message}`);
-    }
+    };
   }
 
   /**
    * Get the table name for this model
-   * @returns {string} The table name
+   * Override in child classes or it will be auto-generated from class name
    */
   static get tableName() {
-    return this.name.replace("Model", "").toLowerCase() + "s";
+    return this.name.replace('Model', '').toLowerCase() + 's';
   }
 
   /**
-   * Get the schema for this model
-   * @returns {Object} The Drizzle schema object
+   * Define JSON schema for validation
+   * Override in child classes to add validation rules
    */
-  static get schema() {
-    const tableName = this.tableName;
-    if (!schema[tableName]) {
-      throw new Error(`Schema not found for table: ${tableName}`);
-    }
-    return schema[tableName];
+  static get jsonSchema() {
+    return {
+      type: 'object',
+      properties: {
+        id: { type: 'integer' },
+        createdAt: { type: 'string', format: 'date-time' },
+        updatedAt: { type: 'string', format: 'date-time' }
+      }
+    };
   }
 
   /**
-   * Get all records from the table
-   * @param {Object} options - Query options (limit, offset, etc.)
-   * @returns {Promise<Array<BaseModel>>} Array of model instances
+   * Auto-update timestamps before insert
+   */
+  $beforeInsert() {
+    const now = new Date().toISOString();
+    this.createdAt = now;
+    this.updatedAt = now;
+  }
+
+  /**
+   * Auto-update timestamp before update
+   */
+  $beforeUpdate() {
+    this.updatedAt = new Date().toISOString();
+  }
+
+  /**
+   * Get all records with optional pagination and filters
    */
   static async all(options = {}) {
     try {
-      let query = db.select().from(this.schema);
-      
-      // Add pagination if provided
+      let query = this.query();
+
+      // Apply WHERE conditions
+      if (options.where) {
+        Object.entries(options.where).forEach(([key, value]) => {
+          if (value !== undefined) {
+            // Convert camelCase key to snake_case for database query
+            const dbKey = this.camelToSnake(key);
+            query = query.where(dbKey, value);
+          }
+        });
+      }
+
+      // Apply ordering
+      if (options.orderBy) {
+        if (Array.isArray(options.orderBy)) {
+          const dbOrderBy = options.orderBy.map(order => {
+            if (typeof order === 'string') {
+              return this.camelToSnake(order);
+            } else if (typeof order === 'object' && order.column) {
+              return { ...order, column: this.camelToSnake(order.column) };
+            }
+            return order;
+          });
+          query = query.orderBy(dbOrderBy);
+        } else {
+          query = query.orderBy(this.camelToSnake(options.orderBy));
+        }
+      }
+
+      // Apply pagination
       if (options.limit) {
         query = query.limit(options.limit);
       }
       if (options.offset) {
         query = query.offset(options.offset);
       }
-      
+
       const result = await query;
       console.log(`All rows from ${this.tableName}:`, result);
       
-      // Return array of instances
-      return result.map(row => new this(row));
+      return result;
     } catch (error) {
       throw new Error(`Failed to fetch all ${this.tableName}: ${error.message}`);
     }
   }
 
   /**
-   * Get a single record by ID
-   * @param {number|string} id - The record ID
-   * @returns {Promise<BaseModel|null>} Model instance or null if not found
+   * Get a single record by ID with optional eager loading
    */
-  static async get(id) {
+  static async get(id, withRelated = null) {
     if (!id) {
-      throw new Error("ID is required");
+      throw new Error('ID is required');
     }
 
     try {
-      const result = await db
-        .select()
-        .from(this.schema)
-        .where(eq(this.schema.id, id))
-        .limit(1);
+      let query = this.query().findById(id);
+      
+      if (withRelated) {
+        query = query.withGraphFetched(withRelated);
+      }
 
+      const result = await query;
       console.log(`Get row from ${this.tableName} where id=${id}:`, result);
 
-      if (result.length === 0) return null;
-      return new this(result[0]);
+      return result || null;
     } catch (error) {
       throw new Error(`Failed to get ${this.tableName} with id ${id}: ${error.message}`);
     }
   }
 
   /**
-   * Create a new record
-   * @param {Object} data - The data to insert
-   * @returns {Promise<BaseModel>} The created instance
+   * Create a new record - FIXED VERSION
    */
   static async create(data) {
     if (!data || typeof data !== 'object') {
-      throw new Error("Data object is required for creation");
+      throw new Error('Data object is required for creation');
     }
 
     try {
-      // Remove undefined values and id if it's null/undefined
-      const cleanData = Object.fromEntries(
-        Object.entries(data).filter(([key, value]) => 
-          value !== undefined && !(key === 'id' && (value === null || value === undefined))
-        )
-      );
-
-      const result = await db.insert(this.schema).values(cleanData).returning();
+      // Use the model's query builder properly
+      const result = await this.query().insertAndFetch(data);
       console.log(`Inserted into ${this.tableName}:`, result);
-
-      // Return instance of the first inserted element
-      return new this(result[0]);
+      
+      return result;
     } catch (error) {
-      throw new Error(`Failed to create ${this.tableName}: ${error.message}`);
+      console.error('Create error details:', {
+        tableName: this.tableName,
+        data,
+        modelName: this.name,
+        hasKnex: !!this.knex(),
+        error: error.message,
+        stack: error.stack
+      });
+      
+      // Try alternative approach if insertAndFetch fails
+      try {
+        console.log('Trying alternative insert approach...');
+        const insertResult = await this.query().insert(data);
+        
+        // If insert returns an ID, fetch the created record
+        if (insertResult && (insertResult.id || insertResult[0])) {
+          const id = insertResult.id || insertResult[0];
+          const fetchedResult = await this.query().findById(id);
+          console.log(`Alternative insert successful, fetched:`, fetchedResult);
+          return fetchedResult;
+        }
+        
+        return insertResult;
+      } catch (alternativeError) {
+        console.error('Alternative insert also failed:', alternativeError.message);
+        throw new Error(`Failed to create ${this.tableName}: ${error.message}`);
+      }
     }
   }
 
   /**
    * Update a record by ID
-   * @param {number|string} id - The record ID
-   * @param {Object} data - The data to update
-   * @returns {Promise<BaseModel|null>} Updated instance or null if not found
    */
-  static async update(id, data) {
+  static async updateById(id, data) {
     if (!id) {
-      throw new Error("ID is required for update");
+      throw new Error('ID is required for update');
     }
     if (!data || typeof data !== 'object') {
-      throw new Error("Data object is required for update");
+      throw new Error('Data object is required for update');
     }
 
     try {
@@ -181,19 +223,15 @@ class BaseModel {
       );
 
       if (Object.keys(cleanData).length === 0) {
-        throw new Error("No valid data provided for update");
+        throw new Error('No valid data provided for update');
       }
 
-      const result = await db
-        .update(this.schema)
-        .set(cleanData)
-        .where(eq(this.schema.id, id))
-        .returning();
+      const result = await this.query()
+        .patchAndFetchById(id, cleanData);
 
       console.log(`Updated ${this.tableName} where id=${id}:`, result);
 
-      if (result.length === 0) return null;
-      return new this(result[0]);
+      return result || null;
     } catch (error) {
       throw new Error(`Failed to update ${this.tableName} with id ${id}: ${error.message}`);
     }
@@ -201,23 +239,17 @@ class BaseModel {
 
   /**
    * Delete a record by ID
-   * @param {number|string} id - The record ID
-   * @returns {Promise<boolean>} True if successfully deleted
    */
-  static async delete(id) {
+  static async deleteById(id) {
     if (!id) {
-      throw new Error("ID is required for deletion");
+      throw new Error('ID is required for deletion');
     }
 
     try {
-      const result = await db
-        .delete(this.schema)
-        .where(eq(this.schema.id, id))
-        .returning();
-
-      console.log(`Deleted from ${this.tableName} where id=${id}:`, result);
+      const deletedCount = await this.query().deleteById(id);
+      console.log(`Deleted from ${this.tableName} where id=${id}, count:`, deletedCount);
       
-      return result.length > 0;
+      return deletedCount > 0;
     } catch (error) {
       throw new Error(`Failed to delete ${this.tableName} with id ${id}: ${error.message}`);
     }
@@ -225,37 +257,48 @@ class BaseModel {
 
   /**
    * Find records matching the given conditions
-   * @param {Object} conditions - Key-value pairs for WHERE conditions
-   * @param {Object} options - Query options (limit, offset, etc.)
-   * @returns {Promise<Array<BaseModel>>} Array of matching instances
    */
   static async where(conditions = {}, options = {}) {
     if (typeof conditions !== 'object') {
-      throw new Error("Conditions must be an object");
+      throw new Error('Conditions must be an object');
     }
 
     try {
-      // Build WHERE clause by combining equalities
-      const clauses = Object.entries(conditions)
+      let query = this.query();
+
+      // Build WHERE clause with snake_case conversion
+      Object.entries(conditions)
         .filter(([key, value]) => value !== undefined)
-        .map(([key, value]) => {
-          if (!this.schema[key]) {
-            throw new Error(`Column '${key}' does not exist in ${this.tableName} schema`);
+        .forEach(([key, value]) => {
+          const dbKey = this.camelToSnake(key);
+          if (Array.isArray(value)) {
+            query = query.whereIn(dbKey, value);
+          } else {
+            query = query.where(dbKey, value);
           }
-          return eq(this.schema[key], value);
         });
 
-      if (clauses.length === 0) {
-        // If no valid conditions, return all records (with options)
-        return this.all(options);
+      // Apply eager loading
+      if (options.withRelated) {
+        query = query.withGraphFetched(options.withRelated);
       }
 
-      const whereClause = clauses.length > 1 ? and(...clauses) : clauses[0];
-
-      let query = db
-        .select()
-        .from(this.schema)
-        .where(whereClause);
+      // Apply ordering with snake_case conversion
+      if (options.orderBy) {
+        if (Array.isArray(options.orderBy)) {
+          const dbOrderBy = options.orderBy.map(order => {
+            if (typeof order === 'string') {
+              return this.camelToSnake(order);
+            } else if (typeof order === 'object' && order.column) {
+              return { ...order, column: this.camelToSnake(order.column) };
+            }
+            return order;
+          });
+          query = query.orderBy(dbOrderBy);
+        } else {
+          query = query.orderBy(this.camelToSnake(options.orderBy));
+        }
+      }
 
       // Add pagination if provided
       if (options.limit) {
@@ -266,11 +309,9 @@ class BaseModel {
       }
 
       const result = await query;
-
       console.log(`Where query on ${this.tableName} with conditions:`, conditions, 'Result:', result);
 
-      // Return array of instances
-      return result.map(row => new this(row));
+      return result;
     } catch (error) {
       throw new Error(`Failed to query ${this.tableName}: ${error.message}`);
     }
@@ -278,146 +319,279 @@ class BaseModel {
 
   /**
    * Find the first record matching the given conditions
-   * @param {Object} conditions - Key-value pairs for WHERE conditions
-   * @returns {Promise<BaseModel|null>} First matching instance or null
    */
-  static async findBy(conditions = {}) {
-    const results = await this.where(conditions, { limit: 1 });
+  static async findBy(conditions = {}, options = {}) {
+    const results = await this.where(conditions, { ...options, limit: 1 });
     return results.length > 0 ? results[0] : null;
   }
 
   /**
-   * Define relationships for this model
-   * Override this method in child classes to define relationships
-   * @returns {Object} Relationship definitions
+   * Count records matching conditions
    */
-  static relations() {
-    // Example structure:
-    // {
-    //   posts: { 
-    //     type: 'one-to-many', 
-    //     model: PostModel, 
-    //     foreignKey: 'user_id' 
-    //   },
-    //   profile: {
-    //     type: 'one-to-one',
-    //     model: ProfileModel,
-    //     foreignKey: 'user_id'
-    //   },
-    //   tags: {
-    //     type: 'many-to-many',
-    //     model: TagModel,
-    //     pivotTable: schema.post_tags,
-    //     foreignKey: 'post_id',
-    //     relatedKey: 'tag_id'
-    //   }
-    // }
-    return {};
+  static async count(conditions = {}) {
+    try {
+      let query = this.query().count('* as count');
+
+      // Apply conditions with snake_case conversion
+      Object.entries(conditions)
+        .filter(([key, value]) => value !== undefined)
+        .forEach(([key, value]) => {
+          const dbKey = this.camelToSnake(key);
+          if (Array.isArray(value)) {
+            query = query.whereIn(dbKey, value);
+          } else {
+            query = query.where(dbKey, value);
+          }
+        });
+
+      const result = await query;
+      return parseInt(result[0].count) || 0;
+    } catch (error) {
+      throw new Error(`Failed to count ${this.tableName}: ${error.message}`);
+    }
   }
 
   /**
-   * Load a related model based on defined relationships
-   * @param {string} name - The relationship name
-   * @returns {Promise<BaseModel|Array<BaseModel>|null>} Related instance(s)
+   * Check if records exist matching conditions
    */
-  async loadRelation(name) {
-    const relation = this.constructor.relations()[name];
-    if (!relation) {
-      throw new Error(`Relation '${name}' not found for ${this.constructor.name}`);
-    }
+  static async exists(conditions = {}) {
+    const count = await this.count(conditions);
+    return count > 0;
+  }
 
-    if (!relation.model) {
-      throw new Error(`Model not defined for relation '${name}'`);
+  /**
+   * Paginate results
+   */
+  static async paginate(page = 1, perPage = 10, conditions = {}, options = {}) {
+    try {
+      const offset = (page - 1) * perPage;
+      
+      // Get total count
+      const total = await this.count(conditions);
+      
+      // Get paginated results
+      const data = await this.where(conditions, {
+        ...options,
+        limit: perPage,
+        offset: offset
+      });
+
+      const totalPages = Math.ceil(total / perPage);
+
+      return {
+        data,
+        pagination: {
+          page,
+          perPage,
+          total,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        }
+      };
+    } catch (error) {
+      throw new Error(`Failed to paginate ${this.tableName}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create multiple records in a single transaction
+   */
+  static async createMany(dataArray) {
+    if (!Array.isArray(dataArray) || dataArray.length === 0) {
+      throw new Error('Data array is required for bulk creation');
     }
 
     try {
-      switch(relation.type) {
-        case 'one-to-many':
-          // Get all entries where foreignKey = this.id
-          if (!relation.foreignKey) {
-            throw new Error(`Foreign key not defined for one-to-many relation '${name}'`);
-          }
-          return await relation.model.where({ [relation.foreignKey]: this.id });
+      const result = await this.query().insert(dataArray);
+      console.log(`Bulk inserted into ${this.tableName}:`, result.length, 'records');
+      
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to bulk create ${this.tableName}: ${error.message}`);
+    }
+  }
 
-        case 'many-to-one':
-          // Get the entry where id = this[foreignKey]
-          if (!relation.foreignKey) {
-            throw new Error(`Foreign key not defined for many-to-one relation '${name}'`);
-          }
-          const foreignId = this[relation.foreignKey];
-          return foreignId ? await relation.model.get(foreignId) : null;
+  /**
+   * Update multiple records matching conditions
+   */
+  static async updateWhere(conditions, data) {
+    if (!conditions || typeof conditions !== 'object') {
+      throw new Error('Conditions are required for bulk update');
+    }
+    if (!data || typeof data !== 'object') {
+      throw new Error('Data object is required for bulk update');
+    }
 
-        case 'one-to-one':
-          // Similar to many-to-one, but get first result where foreignKey = this.id
-          if (!relation.foreignKey) {
-            throw new Error(`Foreign key not defined for one-to-one relation '${name}'`);
-          }
-          const results = await relation.model.where({ [relation.foreignKey]: this.id });
-          return results.length > 0 ? results[0] : null;
+    try {
+      let query = this.query();
 
-        case 'many-to-many':
-          // More complex, requires pivot table
-          return await this.loadManyToMany(relation);
+      // Apply conditions with snake_case conversion
+      Object.entries(conditions)
+        .filter(([key, value]) => value !== undefined)
+        .forEach(([key, value]) => {
+          const dbKey = this.camelToSnake(key);
+          query = query.where(dbKey, value);
+        });
 
-        default:
-          throw new Error(`Relation type '${relation.type}' not supported`);
+      const result = await query.patch(data);
+      console.log(`Bulk updated ${this.tableName}:`, result, 'records');
+      
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to bulk update ${this.tableName}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete multiple records matching conditions
+   */
+  static async deleteWhere(conditions) {
+    if (!conditions || typeof conditions !== 'object') {
+      throw new Error('Conditions are required for bulk delete');
+    }
+
+    try {
+      let query = this.query();
+
+      // Apply conditions with snake_case conversion
+      Object.entries(conditions)
+        .filter(([key, value]) => value !== undefined)
+        .forEach(([key, value]) => {
+          const dbKey = this.camelToSnake(key);
+          query = query.where(dbKey, value);
+        });
+
+      const result = await query.delete();
+      console.log(`Bulk deleted from ${this.tableName}:`, result, 'records');
+      
+      return result;
+    } catch (error) {
+      throw new Error(`Failed to bulk delete ${this.tableName}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Execute a raw SQL query
+   */
+  static async raw(sql, bindings = []) {
+    try {
+      const result = await knexInstance.raw(sql, bindings);
+      return result.rows || result;
+    } catch (error) {
+      throw new Error(`Failed to execute raw query: ${error.message}`);
+    }
+  }
+
+  /**
+   * Begin a database transaction
+   */
+  static async transaction(callback) {
+    return await knexInstance.transaction(callback);
+  }
+
+  /**
+   * Instance method: Save the current instance (create if new, update if exists)
+   */
+  async save() {
+    try {
+      if (this.id) {
+        // Update existing record
+        const result = await this.$query().patch();
+        return result;
+      } else {
+        // Create new record
+        const result = await this.constructor.query().insert(this);
+        Object.assign(this, result);
+        return this;
       }
     } catch (error) {
-      throw new Error(`Failed to load relation '${name}': ${error.message}`);
+      throw new Error(`Failed to save ${this.constructor.name}: ${error.message}`);
     }
   }
 
   /**
-   * Load many-to-many relationships through a pivot table
-   * @param {Object} relation - The relationship configuration
-   * @returns {Promise<Array<BaseModel>>} Array of related instances
+   * Instance method: Delete the current instance
    */
-  async loadManyToMany({ model, pivotTable, foreignKey, relatedKey }) {
-    if (!model || !pivotTable || !foreignKey || !relatedKey) {
-      throw new Error("Many-to-many relation requires model, pivotTable, foreignKey, and relatedKey");
+  async delete() {
+    if (!this.id) {
+      throw new Error('Cannot delete instance without an id');
+    }
+    
+    try {
+      const deleted = await this.$query().delete();
+      return deleted > 0;
+    } catch (error) {
+      throw new Error(`Failed to delete ${this.constructor.name}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Instance method: Reload the instance from the database
+   */
+  async reload() {
+    if (!this.id) {
+      throw new Error('Cannot reload instance without an id');
     }
 
     try {
-      // Get pivot table entries
-      const pivotRows = await db
-        .select()
-        .from(pivotTable)
-        .where(eq(pivotTable[foreignKey], this.id));
-
-      const relatedIds = pivotRows.map(row => row[relatedKey]);
-
-      if (relatedIds.length === 0) return [];
-
-      // Get related records using inArray instead of .in()
-      const relatedRows = await db
-        .select()
-        .from(model.schema)
-        .where(inArray(model.schema.id, relatedIds));
-
-      return relatedRows.map(row => new model(row));
+      const fresh = await this.constructor.query().findById(this.id);
+      if (fresh) {
+        Object.assign(this, fresh);
+      }
+      return this;
     } catch (error) {
-      throw new Error(`Failed to load many-to-many relation: ${error.message}`);
+      throw new Error(`Failed to reload ${this.constructor.name}: ${error.message}`);
     }
   }
 
   /**
-   * Get a JSON representation of the instance
-   * @returns {Object} Plain object representation
-   */
-  toJSON() {
-    const obj = { ...this };
-    // Remove non-data properties
-    delete obj.tableName;
-    delete obj.schema;
-    return obj;
-  }
-
-  /**
-   * Check if the instance has been persisted to the database
-   * @returns {boolean} True if the instance has an ID
+   * Instance method: Check if the instance has been persisted to the database
    */
   isPersisted() {
     return !!this.id;
+  }
+
+  /**
+   * Instance method: Load related models using Objection's eager loading
+   */
+  async loadRelated(expression) {
+    if (!this.id) {
+      throw new Error('Cannot load relations for non-persisted instance');
+    }
+
+    try {
+      const result = await this.constructor.query()
+        .findById(this.id)
+        .withGraphFetched(expression);
+      
+      if (result) {
+        Object.assign(this, result);
+      }
+      return this;
+    } catch (error) {
+      throw new Error(`Failed to load relations: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get a plain object representation of the instance
+   */
+  toJSON() {
+    return super.toJSON();
+  }
+
+  /**
+   * Debug method to check knex binding
+   */
+  static debugKnexBinding() {
+    return {
+      hasKnex: !!knexInstance,
+      modelKnex: !!this.knex(),
+      knexVersion: knexInstance.VERSION || 'unknown',
+      tableName: this.tableName,
+      boundCorrectly: this.knex() === knexInstance
+    };
   }
 }
 
