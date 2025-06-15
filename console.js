@@ -11,10 +11,11 @@ const replServer = repl.start({
   prompt: '> ',
   useColors: true,
   ignoreUndefined: true,
-  useGlobal: true
+  useGlobal: true,
+  useSyntax: true
 });
 
-// Add initialization code directly
+
 try {
   // Convert the Windows path to a proper file URL
   const initPath = resolve('./console/replInit.js');
