@@ -27,25 +27,25 @@ try {
   // More comprehensive path resolution for Linux compatibility
   const possiblePaths = [
     // Relative to current working directory
-    join(process.cwd(), 'console', 'replInit.js'),
-    join(process.cwd(), 'console/replInit.js'),
+    join(process.cwd(), 'console', 'replinit.js'),
+    join(process.cwd(), 'console/replinit.js'),
     
     // Relative to script directory
-    join(__dirname, 'console', 'replInit.js'),
-    join(__dirname, 'console/replInit.js'),
+    join(__dirname, 'console', 'replinit.js'),
+    join(__dirname, 'console/replinit.js'),
     
     // Direct relative paths
-    './console/replInit.js',
-    resolve('./console/replInit.js'),
-    resolve('./console', 'replInit.js'),
+    './console/replinit.js',
+    resolve('./console/replinit.js'),
+    resolve('./console', 'replinit.js'),
     
     // Absolute paths
-    resolve(__dirname, './console/replInit.js'),
-    resolve(__dirname, 'console/replInit.js'),
-    resolve(__dirname, 'console', 'replInit.js'),
+    resolve(__dirname, './console/replinit.js'),
+    resolve(__dirname, 'console/replinit.js'),
+    resolve(__dirname, 'console', 'replinit.js'),
   ];
   
-  console.log('\nTrying different paths for replInit.js:');
+  console.log('\nTrying different paths for replinit.js:');
   let initPath = null;
   
   for (const path of possiblePaths) {
@@ -75,7 +75,7 @@ try {
       await initModule.setup(replServer);
     }
   } else {
-    console.error('❌ Could not find replInit.js in any expected location');
+    console.error('❌ Could not find replinit.js in any expected location');
     console.log('\nDirectory structure analysis:');
     
     // Check current directory
