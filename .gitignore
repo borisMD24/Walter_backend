@@ -34,4 +34,4 @@ Thumbs.db
 ./schema/
 
 ./public/*
-knexfile.js
+knexfile.cjs
