@@ -5,14 +5,25 @@ import knexInstance from "../db/knex.js";
 Model.knex(knexInstance);
 
 class BaseModel extends Model {
-  constructor() {
-    super();
-    // Track loaded relations to avoid infinite loading
-    this._loadedRelations = new Set();
-    // Cache for relation data
-    this._relationCache = new Map();
-  }
 
+  constructor() {
+  super();
+  // Use Object.defineProperty to make these properties non-enumerable
+  // This prevents them from being serialized during database operations
+  Object.defineProperty(this, '_loadedRelations', {
+    value: new Set(),
+    writable: true,
+    enumerable: false, // This is the key - prevents DB serialization
+    configurable: true
+  });
+  
+  Object.defineProperty(this, '_relationCache', {
+    value: new Map(),
+    writable: true,
+    enumerable: false, // This is the key - prevents DB serialization
+    configurable: true
+  });
+}
   /**
    * Convert camelCase to snake_case
    */
