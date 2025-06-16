@@ -3,25 +3,25 @@ import Config from "../classes/dynamicConfig.js";
 import Color from "../classes/color.js";
 
 class HueHelper {
-  static #instance = null;
-  client = null;
-  isConnected = false;
-  connectionPromise = null;
+  static instance = null;
 
-  // Private constructor to prevent direct construction calls
   constructor() {
-    if (HueHelper.#instance) {
-      return HueHelper.#instance;
+    if (HueHelper.instance) {
+      return HueHelper.instance;
     }
-    HueHelper.#instance = this;
+
+    this.client = null;
+    this.isConnected = false;
+    this.connectionPromise = null;
+
+    HueHelper.instance = this;
   }
 
-  // Get the singleton instance
   static getInstance() {
-    if (!HueHelper.#instance) {
-      HueHelper.#instance = new HueHelper();
+    if (!HueHelper.instance) {
+      HueHelper.instance = new HueHelper();
     }
-    return HueHelper.#instance;
+    return HueHelper.instance;
   }
 
   // Initialize MQTT connection
@@ -306,4 +306,4 @@ class HueHelper {
   }
 }
 
-export default HueHelper.getInstance();
+export default HueHelper;
