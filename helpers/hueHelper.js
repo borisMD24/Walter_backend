@@ -3,12 +3,29 @@ import Config from "../classes/dynamicConfig.js";
 import Color from "../classes/color.js";
 
 class HueHelper {
-  static client = null;
-  static isConnected = false;
-  static connectionPromise = null;
+  static #instance = null;
+  client = null;
+  isConnected = false;
+  connectionPromise = null;
+
+  // Private constructor to prevent direct construction calls
+  constructor() {
+    if (HueHelper.#instance) {
+      return HueHelper.#instance;
+    }
+    HueHelper.#instance = this;
+  }
+
+  // Get the singleton instance
+  static getInstance() {
+    if (!HueHelper.#instance) {
+      HueHelper.#instance = new HueHelper();
+    }
+    return HueHelper.#instance;
+  }
 
   // Initialize MQTT connection
-  static async connect() {
+  async connect() {
     if (this.connectionPromise) {
       return this.connectionPromise;
     }
@@ -65,14 +82,14 @@ class HueHelper {
   }
 
   // Ensure connection before sending commands
-  static async ensureConnection() {
+  async ensureConnection() {
     if (!this.isConnected) {
       await this.connect();
     }
   }
 
   // Send command to individual light
-  static async sendCommand(obj, deviceName) {
+  async sendCommand(obj, deviceName) {
     try {
       await this.ensureConnection();
       
@@ -100,7 +117,7 @@ class HueHelper {
   }
 
   // Send command to grouped lights (broadcast to multiple devices)
-  static async sendGroupedCommand(obj, deviceNames) {
+  async sendGroupedCommand(obj, deviceNames) {
     try {
       await this.ensureConnection();
       
@@ -116,7 +133,7 @@ class HueHelper {
   }
 
   // Build MQTT command body (adapted from Zigbee2MQTT format)
-  static buildMqttBody(obj) {
+  buildMqttBody(obj) {
     const body = {};
 
     // Handle on/off state
@@ -158,45 +175,45 @@ class HueHelper {
   }
 
   // Convenience methods for common operations
-  static async turnOn(deviceName, options = {}) {
+  async turnOn(deviceName, options = {}) {
     return this.sendCommand({ on: true, ...options }, deviceName);
   }
 
-  static async turnOff(deviceName, options = {}) {
+  async turnOff(deviceName, options = {}) {
     return this.sendCommand({ on: false, ...options }, deviceName);
   }
 
-  static async setBrightness(deviceName, brightness, options = {}) {
+  async setBrightness(deviceName, brightness, options = {}) {
     return this.sendCommand({ brightness, ...options }, deviceName);
   }
 
-  static async setColor(deviceName, color, options = {}) {
+  async setColor(deviceName, color, options = {}) {
     return this.sendCommand({ color, ...options }, deviceName);
   }
 
-  static async setColorTemperature(deviceName, colorTemperature, options = {}) {
+  async setColorTemperature(deviceName, colorTemperature, options = {}) {
     return this.sendCommand({ colorTemperature, ...options }, deviceName);
   }
 
   // Group convenience methods
-  static async turnOnGroup(deviceNames, options = {}) {
+  async turnOnGroup(deviceNames, options = {}) {
     return this.sendGroupedCommand({ on: true, ...options }, deviceNames);
   }
 
-  static async turnOffGroup(deviceNames, options = {}) {
+  async turnOffGroup(deviceNames, options = {}) {
     return this.sendGroupedCommand({ on: false, ...options }, deviceNames);
   }
 
-  static async setBrightnessGroup(deviceNames, brightness, options = {}) {
+  async setBrightnessGroup(deviceNames, brightness, options = {}) {
     return this.sendGroupedCommand({ brightness, ...options }, deviceNames);
   }
 
-  static async setColorGroup(deviceNames, color, options = {}) {
+  async setColorGroup(deviceNames, color, options = {}) {
     return this.sendGroupedCommand({ color, ...options }, deviceNames);
   }
 
   // Device discovery and management
-  static async getDevices() {
+  async getDevices() {
     try {
       await this.ensureConnection();
       
@@ -241,7 +258,7 @@ class HueHelper {
   }
 
   // Enable pairing mode
-  static async enablePairing(duration = 60) {
+  async enablePairing(duration = 60) {
     try {
       await this.ensureConnection();
       
@@ -267,7 +284,7 @@ class HueHelper {
   }
 
   // Disconnect from MQTT broker
-  static disconnect() {
+  disconnect() {
     if (this.client) {
       this.client.end();
       this.isConnected = false;
@@ -277,16 +294,16 @@ class HueHelper {
   }
 
   // Legacy method names for backward compatibility
-  static async sendCommand_legacy(body, id) {
+  async sendCommand_legacy(body, id) {
     console.warn('sendCommand with ID is deprecated. Use sendCommand(obj, deviceName) instead.');
     // Try to map the old format to new format
     return this.sendCommand(body, id);
   }
 
-  static buildBody(obj) {
+  buildBody(obj) {
     console.warn('buildBody is deprecated. Use buildMqttBody instead.');
     return this.buildMqttBody(obj);
   }
 }
 
-export default HueHelper;
+export default HueHelper.getInstance();
