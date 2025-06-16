@@ -41,6 +41,16 @@ class RoomModel extends BaseModel {
     });
     return debug;
   }
+  turnOn(){
+    this.bulbs.forEach((b)=>{
+        b.turnOn();
+    });
+  }
+  turnOff(){
+    this.bulbs.forEach((b)=>{
+        b.turnOn();
+    });
+  }
 }
 
 export default RoomModel;
