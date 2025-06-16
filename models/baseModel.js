@@ -19,21 +19,55 @@ class BaseModel extends Model {
   static camelToSnake(str) {
     return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
   }
-  async emplaceRelations() {  // should be called after instanciantion 
-                              // because of : Uncaught Error: Cannot load relation 'bulbs' for non-persisted instance
-                              // but don't know hooooooooow, deepseek help meeeeeeeeee
-                              // I tried every tricks I know :(
-                              // maybe change every fetch but i'm lazy
-    await this.constructor;
-    const relationNames = this.getRelationNames();
-    for (const name of relationNames) {
-      this[name] = this._loadRelation(name);
+
+  async emplaceRelations() {
+    // Check if the instance is persisted (has an ID)
+    if (!this.id) {
+      console.warn('emplaceRelations called on non-persisted instance.');
+      return;
+    }
+
+    try {
+      const relationNames = this.getRelationNames();
+      for (const name of relationNames) {
+        await this._loadRelation(name);
+      }
+    } catch (error) {
+      console.error(`Failed to emplace relations: ${error.message}`);
+      throw error;
     }
   }
-  
+
+  /**
+   * Override the $afterInsert method to load relations after creation
+   */
+  async $afterInsert(queryContext) {
+    await super.$afterInsert?.(queryContext);
+    await this.emplaceRelations();
+  }
+
+  /**
+   * Override the $afterUpdate method to refresh relations after update
+   */
+  async $afterUpdate(opt, queryContext) {
+    await super.$afterUpdate?.(opt, queryContext);
+    // Clear relation cache and reload relations after update
+    this.clearRelationCache();
+    await this.emplaceRelations();
+  }
+
+  /**
+   * Override the $afterGet method to load relations after fetching
+   */
+  async $afterGet(queryContext) {
+    await super.$afterGet?.(queryContext);
+    await this.emplaceRelations();
+  }
+
   getRelationNames() {
     return Object.keys(this.constructor.relationMappings ?? {});
   }
+
   /**
    * Convert snake_case to camelCase
    */
@@ -357,6 +391,11 @@ class BaseModel extends Model {
       const result = await query;
       console.log(`Get row from ${this.tableName} where id=${id}:`, result);
 
+      if (result) {
+        // Manually trigger the $afterGet hook
+        await result.$afterGet();
+      }
+
       return result || null;
     } catch (error) {
       throw new Error(
@@ -366,7 +405,7 @@ class BaseModel extends Model {
   }
 
   /**
-   * Create a new record - FIXED VERSION
+   * Create a new record
    */
   static async create(data) {
     if (!data || typeof data !== "object") {
@@ -728,11 +767,12 @@ class BaseModel extends Model {
     try {
       if (this.id) {
         // Update existing record
-        const result = await this.$query().patch();
-        return result;
+        const result = await this.$query().patchAndFetch();
+        Object.assign(this, result);
+        return this;
       } else {
         // Create new record
-        const result = await this.constructor.query().insert(this);
+        const result = await this.constructor.query().insertAndFetch(this);
         Object.assign(this, result);
         return this;
       }
