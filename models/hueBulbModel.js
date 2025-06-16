@@ -1,8 +1,14 @@
-import hueHelper from "../helpers/hueHelper.js";
+import HueHelper from "../helpers/hueHelper.js";
 import BaseModel from "./baseModel.js";
 import Color from "../classes/color.js";
 
 class HueBulbModel extends BaseModel {
+    constructor() {
+        super();
+        // Get the singleton instance
+        this.hueHelper = HueHelper.getInstance();
+    }
+
     static get tableName() {
         return 'hue_bulbs';
     }
@@ -29,7 +35,7 @@ class HueBulbModel extends BaseModel {
         }
         
         try {
-            await hueHelper.turnOff(this.hueId, options);
+            await this.hueHelper.turnOff(this.hueId, options);
         } catch (error) {
             console.error(`Failed to turn off bulb ${this.name}:`, error);
             throw error;
@@ -43,7 +49,7 @@ class HueBulbModel extends BaseModel {
         }
         
         try {
-            await hueHelper.turnOn(this.hueId, options);
+            await this.hueHelper.turnOn(this.hueId, options);
         } catch (error) {
             console.error(`Failed to turn on bulb ${this.name}:`, error);
             throw error;
@@ -65,7 +71,7 @@ class HueBulbModel extends BaseModel {
                 color = new Color(rgb);
             }
             
-            await hueHelper.setColor(this.hueId, color, options);
+            await this.hueHelper.setColor(this.hueId, color, options);
         } catch (error) {
             console.error(`Failed to set color for bulb ${this.name}:`, error);
             throw error;
@@ -81,7 +87,7 @@ class HueBulbModel extends BaseModel {
         try {
             // Ensure brightness is within 0-100 range
             const normalizedBrightness = Math.max(0, Math.min(100, brightness));
-            await hueHelper.setBrightness(this.hueId, normalizedBrightness, options);
+            await this.hueHelper.setBrightness(this.hueId, normalizedBrightness, options);
         } catch (error) {
             console.error(`Failed to set brightness for bulb ${this.name}:`, error);
             throw error;
@@ -95,7 +101,7 @@ class HueBulbModel extends BaseModel {
         }
         
         try {
-            await hueHelper.setColorTemperature(this.hueId, colorTemp, options);
+            await this.hueHelper.setColorTemperature(this.hueId, colorTemp, options);
         } catch (error) {
             console.error(`Failed to set color temperature for bulb ${this.name}:`, error);
             throw error;
@@ -112,7 +118,7 @@ class HueBulbModel extends BaseModel {
         try {
             // Merge command object with options
             const fullCommand = { ...commandObj, ...options };
-            await hueHelper.sendCommand(fullCommand, this.hueId);
+            await this.hueHelper.sendCommand(fullCommand, this.hueId);
         } catch (error) {
             console.error(`Failed to send command to bulb ${this.name}:`, error);
             throw error;
@@ -154,7 +160,7 @@ class HueBulbModel extends BaseModel {
                 command.transitionDuration = state.transitionDuration;
             }
             
-            await hueHelper.sendCommand(command, this.hueId);
+            await this.hueHelper.sendCommand(command, this.hueId);
         } catch (error) {
             console.error(`Failed to set state for bulb ${this.name}:`, error);
             throw error;
@@ -170,6 +176,7 @@ class HueBulbModel extends BaseModel {
         }
         
         try {
+            const hueHelper = HueHelper.getInstance();
             await hueHelper.turnOnGroup(hueIds, options);
         } catch (error) {
             console.error('Failed to turn on bulb group:', error);
@@ -185,6 +192,7 @@ class HueBulbModel extends BaseModel {
         }
         
         try {
+            const hueHelper = HueHelper.getInstance();
             await hueHelper.turnOffGroup(hueIds, options);
         } catch (error) {
             console.error('Failed to turn off bulb group:', error);
@@ -201,6 +209,7 @@ class HueBulbModel extends BaseModel {
         
         try {
             const normalizedBrightness = Math.max(0, Math.min(100, brightness));
+            const hueHelper = HueHelper.getInstance();
             await hueHelper.setBrightnessGroup(hueIds, normalizedBrightness, options);
         } catch (error) {
             console.error('Failed to set brightness for bulb group:', error);
@@ -217,6 +226,7 @@ class HueBulbModel extends BaseModel {
         
         try {
             const colorObj = color instanceof Color ? color : new Color(color);
+            const hueHelper = HueHelper.getInstance();
             await hueHelper.setColorGroup(hueIds, colorObj, options);
         } catch (error) {
             console.error('Failed to set color for bulb group:', error);
