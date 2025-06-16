@@ -48,7 +48,7 @@ class RoomModel extends BaseModel {
   }
   turnOff(){
     this.bulbs.forEach((b)=>{
-        b.turnOn();
+        b.turnOff();
     });
   }
 }
