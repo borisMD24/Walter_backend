@@ -3,6 +3,7 @@ import TestController from "./controllers/testController.js";
 import HueController from "./controllers/HueController.js";
 import BlobManager from "./classes/blobManager.js";
 import HueHelper from "./helpers/hueHelper.js";
+import HueBulbModel from "./models/hueBulbModel.js";
 
 const http = (router) => {
     new HTTPRouteAbstraction(router, TestController)
@@ -23,7 +24,7 @@ const http = (router) => {
 
 const wsRoute = (ws) => {
     ws.createRoom('floatingBubble', {
-    messageHandler: (msg, socket) => {
+    messageHandler: async (msg, socket) => {
         console.log(`[floatingBubble] Message from ${socket._socket.remoteAddress}: ${msg}`);
         // if(msg.payload.brightness){
         //     HueHelper.sendGroupedCommand(HueHelper.buildBody({
@@ -31,11 +32,13 @@ const wsRoute = (ws) => {
         //         brightness : Math.round(msg.payload.brightness/255 * 100)
         //     }), "154f48fd-ed25-407f-b548-bd99537301e2")
         // }
-        if(typeof msg.payload.brightness === 'number'){
-        //     HueHelper.sendGroupedCommand(HueHelper.buildBody({
-        //         transitionDuration : 10,
-        //         brightness : Math.round(msg.payload.brightness/255 * 100)
-        //     }), "154f48fd-ed25-407f-b548-bd99537301e2")
+        if(typeof msg.payload?.brightness === 'number'){
+            await HueBulbModel.all()
+                    .forEach(bulb => {
+                        bulb.setState({
+                            brightness : msg.payload.brightness
+                        })
+                    });
             
             ws.sendFromRoom("leds",
                 {
