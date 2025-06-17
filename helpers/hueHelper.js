@@ -305,5 +305,5 @@ class HueHelper {
     return this.buildMqttBody(obj);
   }
 }
-
+const h = new HueHelper;
 export default HueHelper;

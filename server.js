@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   try {
     await Config.load();
-    await HueHelper.connect();
+    await HueHelper.instance.connect();
     const app = fastify();
 
     app.register(fastifyStatic, {
