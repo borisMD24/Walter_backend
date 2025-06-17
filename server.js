@@ -9,6 +9,7 @@ import OmniSourceRouter from './classes/omniSourceRouter.js';
 import routes from './routes.js';
 import Config from './classes/dynamicConfig.js';
 import ws from './classes/webSocketManager.js';
+import HueHelper from './helpers/hueHelper.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,7 +17,7 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   try {
     await Config.load();
-
+    await HueHelper.connect();
     const app = fastify();
 
     app.register(fastifyStatic, {
