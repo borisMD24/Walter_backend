@@ -33,12 +33,7 @@ const wsRoute = (ws) => {
         //     }), "154f48fd-ed25-407f-b548-bd99537301e2")
         // }
         if(typeof msg.payload?.brightness === 'number'){
-            await HueBulbModel.all()
-                    .forEach(bulb => {
-                        bulb.setState({
-                            brightness : msg.payload.brightness
-                        })
-                    });
+            HueBulbModel.all().then(a=>a.forEach(e=>e.setState({brightness : msg.payload.brightness})))
             
             ws.sendFromRoom("leds",
                 {
